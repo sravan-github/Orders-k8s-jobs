@@ -1,0 +1,38 @@
+# 4. CronJob that generates the daily report (every day at 00:00, cluster time).
+# Trigger manually:  kubectl create job manual-report-1 --from=cronjob/daily-report -n orders
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: daily-report
+  namespace: orders
+spec:
+  schedule: "0 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: daily-report
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: report
+              image: orders-app:1.0
+              imagePullPolicy: IfNotPresent
+              command: ["python", "daily_report.py"]
+              env:
+                - name: DB_HOST
+                  value: mysql
+                - name: DB_NAME
+                  valueFrom: { secretKeyRef: { name: mysql-credentials, key: MYSQL_DATABASE } }
+                - name: DB_USER
+                  valueFrom: { secretKeyRef: { name: mysql-credentials, key: MYSQL_USER } }
+                - name: DB_PASSWORD
+                  valueFrom: { secretKeyRef: { name: mysql-credentials, key: MYSQL_PASSWORD } }
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { memory: 128Mi }

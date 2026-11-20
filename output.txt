@@ -1,0 +1,126 @@
+PS C:\Users\000RKK744\Desktop\jobs\orders-k8s> .\deploy.ps1
+==> Checking Kubernetes (Docker Desktop)
+Switched to context "docker-desktop".
+==> Building image orders-app:1.0 (local image, visible to Docker Desktop's cluster)
+[+] Building 20.4s (11/11) FINISHED                                                                             docker:desktop-linux
+ => [internal] load build definition from Dockerfile                                                                            0.1s
+ => => transferring dockerfile: 332B                                                                                            0.0s
+ => [internal] load metadata for docker.io/library/python:3.12-slim                                                             2.8s
+ => [internal] load .dockerignore                                                                                               0.0s
+ => => transferring context: 2B                                                                                                 0.0s
+ => [1/6] FROM docker.io/library/python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b       6.6s
+ => => resolve docker.io/library/python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b       0.0s
+ => => sha256:2dc99d2d0a39fce31e37615eb4c932e16dcc4c2b0ce9993714280081b5dbe085 12.12MB / 12.12MB                                1.2s
+ => => sha256:05e0eee5572e9c9f50408a2132590133b830a668a1cf2ff2b150f19c57707e2b 248B / 248B                                      0.6s
+ => => sha256:68bced9e0afa4479df17c3646e27c7c7e9ce9ba70c0e6c73b6826487b89037d9 1.29MB / 1.29MB                                  0.9s
+ => => sha256:37fb86c2a767b88d500c6872195f88078f64765fe0d2f9cc375cc2efbd4c0a41 29.86MB / 29.86MB                                4.0s
+ => => extracting sha256:37fb86c2a767b88d500c6872195f88078f64765fe0d2f9cc375cc2efbd4c0a41                                       1.5s
+ => => extracting sha256:68bced9e0afa4479df17c3646e27c7c7e9ce9ba70c0e6c73b6826487b89037d9                                       0.2s
+ => => extracting sha256:2dc99d2d0a39fce31e37615eb4c932e16dcc4c2b0ce9993714280081b5dbe085                                       0.8s
+ => => extracting sha256:05e0eee5572e9c9f50408a2132590133b830a668a1cf2ff2b150f19c57707e2b                                       0.0s
+ => [internal] load build context                                                                                               0.1s
+ => => transferring context: 22.09kB                                                                                            0.1s
+ => [2/6] WORKDIR /app                                                                                                          0.2s
+ => [3/6] COPY requirements.txt .                                                                                               0.0s
+ => [4/6] RUN pip install --no-cache-dir -r requirements.txt                                                                    5.8s
+ => [5/6] COPY . .                                                                                                              0.1s
+ => [6/6] RUN useradd -r -u 10001 appuser                                                                                       0.3s
+ => exporting to image                                                                                                          4.1s
+ => => exporting layers                                                                                                         1.5s
+ => => exporting manifest sha256:18babd861bd21cc56c6cff72f75d9edcf74929dcfab980df56b8a44bac1260e7                               0.0s
+ => => exporting config sha256:1472070406b9304668a746955c4ad5972c76bf36a0b0eec44a2cd23508324e6e                                 0.0s
+ => => exporting attestation manifest sha256:fb2349fe8abafd9cff1162c97d8010428efe7a5d32019e166cb7f03dbd2b38fa                   0.0s
+ => => exporting manifest list sha256:85ba29c52b3c4394f8493b90f6b8a7ef2d6ba44fabd224dee1df7a0dc93e6b75                          0.0s
+ => => naming to docker.io/library/orders-app:1.0                                                                               0.0s
+ => => unpacking to docker.io/library/orders-app:1.0                                                                            2.5s
+==> Deploying MySQL + API
+namespace/orders created
+secret/mysql-credentials created
+persistentvolumeclaim/mysql-data created
+deployment.apps/mysql created
+service/mysql created
+deployment.apps/orders-api created
+service/orders-api created
+Waiting for deployment "mysql" rollout to finish: 0 of 1 updated replicas are available...
+deployment "mysql" successfully rolled out
+deployment "orders-api" successfully rolled out
+==> Deploying CronJob
+cronjob.batch/daily-report created
+==> Deploying monitoring (kube-state-metrics, Prometheus, Grafana)
+namespace/monitoring created
+serviceaccount/kube-state-metrics created
+clusterrole.rbac.authorization.k8s.io/kube-state-metrics created
+clusterrolebinding.rbac.authorization.k8s.io/kube-state-metrics created
+deployment.apps/kube-state-metrics created
+service/kube-state-metrics created
+configmap/prometheus-config created
+deployment.apps/prometheus created
+service/prometheus created
+configmap/grafana-provisioning created
+deployment.apps/grafana created
+service/grafana created
+configmap/grafana-dashboards created
+deployment.apps/grafana restarted
+Waiting for deployment "grafana" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "grafana" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "grafana" rollout to finish: 1 old replicas are pending termination...
+deployment "grafana" successfully rolled out
+
+Ready:
+  Orders API : http://localhost:30080
+  Grafana    : http://localhost:30030   (admin / admin)  Dashboard: Orders > Orders - Job & CronJob Monitoring
+Try it:  .\demo.ps1
+
+PS C:\Users\000RKK744\Desktop\jobs\orders-k8s> .\demo.ps1
+NodePort not reachable, starting kubectl port-forward on 30080...
+deployment "orders-api" successfully rolled out
+==> 1/2. Customers place orders (stored in MySQL as PENDING)
+{"id":1,"status":"PENDING"}
+{"id":2,"status":"PENDING"}
+{"id":3,"status":"PENDING"}
+{"id":4,"status":"PENDING"}
+{"id":5,"status":"PENDING"}
+Pending orders:
+5
+==> 3. Run the processing Job
+job.batch/process-orders created
+job.batch/process-orders condition met
+Processed order 1
+Processed order 2
+Processed order 3
+Processed order 4
+Processed order 5
+Done. Processed 5 order(s).
+Pending orders now:
+0
+==> 4. Trigger the daily-report CronJob manually
+job.batch/manual-report-122951 created
+job.batch/manual-report-122951 condition met
+Daily report: total=5 pending=0 processed=5 revenue=149.85
+{
+    "value":  [
+                  {
+                      "generated_at":  "2026-11-20T06:59:52",
+                      "pending_orders":  0,
+                      "processed_orders":  5,
+                      "report_date":  "2026-11-20",
+                      "revenue":  149.85,
+                      "total_orders":  5
+                  }
+              ],
+    "Count":  1
+}
+==> 5. Run a failing Job so Grafana shows a failure
+job.batch/process-orders-fail-demo created
+Open Grafana: http://localhost:30030 (admin/admin)
+If Grafana is not reachable, run: kubectl port-forward -n monitoring svc/grafana 30030:3000
+PS C:\Users\000RKK744\Desktop\jobs\orders-k8s> kubectl port-forward -n monitoring svc/grafana 30030:3000
+Forwarding from 127.0.0.1:30030 -> 3000
+Forwarding from [::1]:30030 -> 3000
+Handling connection for 30030
+Handling connection for 30030
+Handling connection for 30030
+Handling connection for 30030
+Handling connection for 30030
+Handling connection for 30030
+Handling connection for 30030

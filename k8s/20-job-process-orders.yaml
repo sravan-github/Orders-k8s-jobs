@@ -1,0 +1,36 @@
+# 3. Kubernetes Job that processes pending orders.
+# Run:  kubectl delete job process-orders -n orders --ignore-not-found
+#       kubectl apply -f k8s/20-job-process-orders.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: process-orders
+  namespace: orders
+  labels:
+    app: order-processor
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: order-processor
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: processor
+          image: orders-app:1.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "process_orders.py"]
+          env:
+            - name: DB_HOST
+              value: mysql
+            - name: DB_NAME
+              valueFrom: { secretKeyRef: { name: mysql-credentials, key: MYSQL_DATABASE } }
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: mysql-credentials, key: MYSQL_USER } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: mysql-credentials, key: MYSQL_PASSWORD } }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }

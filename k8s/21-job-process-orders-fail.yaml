@@ -1,0 +1,31 @@
+# Same Job, but exits 1 on purpose so a failure shows up in Grafana.
+# Run:  kubectl apply -f k8s/21-job-process-orders-fail.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: process-orders-fail-demo
+  namespace: orders
+  labels:
+    app: order-processor
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: order-processor
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: processor
+          image: orders-app:1.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "process_orders.py", "--fail"]
+          env:
+            - name: DB_HOST
+              value: mysql
+            - name: DB_NAME
+              valueFrom: { secretKeyRef: { name: mysql-credentials, key: MYSQL_DATABASE } }
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: mysql-credentials, key: MYSQL_USER } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: mysql-credentials, key: MYSQL_PASSWORD } }
