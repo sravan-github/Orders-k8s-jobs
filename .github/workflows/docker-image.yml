@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: orders-app:1.0
+
+jobs:
+  validate:
+    name: Lint & validate manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r app/requirements.txt
+          pip install ruff
+
+      - name: Lint Python
+        run: ruff check --select F app
+
+      - name: Byte-compile Python
+        run: python -m compileall -q app
+
+      - name: Validate Kubernetes manifests
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          ./kubeconform -strict -summary -ignore-missing-schemas k8s monitoring/monitoring.yaml
+
+  e2e:
+    name: Build & deploy to kind
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          tags: ${{ env.IMAGE }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: orders
+
+      - name: Load image into kind
+        run: kind load docker-image "$IMAGE" --name orders
+
+      - name: Deploy MySQL + API
+        run: |
+          kubectl apply -f k8s/00-namespace-mysql.yaml
+          kubectl apply -f k8s/10-api.yaml
+          kubectl rollout status deployment/mysql -n orders --timeout=300s
+          kubectl rollout status deployment/orders-api -n orders --timeout=180s
+
+      - name: Deploy CronJob
+        run: kubectl apply -f k8s/30-cronjob-daily-report.yaml
+
+      - name: Smoke test API
+        run: |
+          kubectl port-forward -n orders svc/orders-api 30080:80 >/dev/null 2>&1 &
+          sleep 5
+          curl -fsS http://localhost:30080/healthz
+          curl -fsS -X POST http://localhost:30080/orders \
+            -H "Content-Type: application/json" \
+            -d '{"customer_name":"ci","product":"widget","quantity":1,"amount":9.99}'
+          curl -fsS "http://localhost:30080/orders?status=PENDING"
+
+      - name: Run process-orders Job
+        run: |
+          kubectl apply -f k8s/20-job-process-orders.yaml
+          kubectl wait --for=condition=complete job/process-orders -n orders --timeout=180s
+          kubectl logs job/process-orders -n orders
+
+      - name: Trigger daily-report CronJob
+        run: |
+          kubectl create job ci-report --from=cronjob/daily-report -n orders
+          kubectl wait --for=condition=complete job/ci-report -n orders --timeout=120s
+          kubectl logs job/ci-report -n orders
+          curl -fsS http://localhost:30080/reports
+
+      - name: Dump cluster state on failure
+        if: failure()
+        run: |
+          kubectl get all -n orders -o wide || true
+          kubectl describe pods -n orders || true
+          kubectl logs -n orders -l app=orders-api --tail=100 || true
